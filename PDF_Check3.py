@@ -66,7 +66,7 @@ st.markdown(
 )
 
 # === Logo (optional: replace with your URL or local path) ===
-st.image("https://upload.wikimedia.org/wikipedia/commons/3/3b/UPS_Logo_Shield_2016.svg", width=150)
+st.image("UPS_Logo.png", width=150)
 
 st.markdown('<div class="header">UPS Store PDF Print Checker 🖨️</div>', unsafe_allow_html=True)
 
@@ -190,3 +190,4 @@ def analyze_pdf(pdf_file):
 if uploaded_files:
     for pdf_file in uploaded_files:
         analyze_pdf(pdf_file)
+
