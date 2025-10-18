@@ -11,21 +11,87 @@ PRINTER_HEIGHT = 11       # inches
 MIN_DPI = 300             # minimum image DPI
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB"]  # allowed color modes
 
-st.set_page_config(page_title="PDF Print Checker", layout="wide")
-st.title("🖨️ PDF Print Specification Checker")
-st.markdown("""
-**Drag and drop one or more PDF files below**, or click “Browse files” to select them.
+# === Branding Colors (UPS-style) ===
+PRIMARY_COLOR = "#FFB500"   # UPS Gold
+SECONDARY_COLOR = "#3C3C3C" # Dark Gray
+SUCCESS_COLOR = "#66FF66"
+WARNING_COLOR = "#FFA500"
+ERROR_COLOR = "#FF5555"
 
-Print specifications:
+# === Page Setup ===
+st.set_page_config(page_title="UPS Store PDF Checker", layout="wide")
+st.markdown(
+    f"""
+    <style>
+    .stApp {{
+        background-color: #f7f7f7;
+    }}
+    .header {{
+        color: {PRIMARY_COLOR};
+        font-size: 2.5rem;
+        font-weight: bold;
+    }}
+    .subheader {{
+        color: {SECONDARY_COLOR};
+        font-size: 1.3rem;
+        font-weight: bold;
+    }}
+    .instructions {{
+        background-color: #FFF3CD;
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }}
+    .success-box {{
+        background-color: #D4EDDA;
+        padding: 8px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+    }}
+    .warning-box {{
+        background-color: #FFF3CD;
+        padding: 8px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+    }}
+    .error-box {{
+        background-color: #F8D7DA;
+        padding: 8px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-- Page size: 8.5 × 11 inches (Letter)  
-- Color mode: CMYK or RGB  
-- Image resolution: minimum 300 DPI
-""")
+# === Logo (optional: replace with your URL or local path) ===
+st.image("https://upload.wikimedia.org/wikipedia/commons/3/3b/UPS_Logo_Shield_2016.svg", width=150)
 
+st.markdown('<div class="header">UPS Store PDF Print Checker 🖨️</div>', unsafe_allow_html=True)
+
+st.markdown(
+    '<div class="instructions">'
+    '📥 **Drag and drop your PDF(s) here or click "Browse files".**<br>'
+    f'Print specs:<br>'
+    f'- Page size: {PRINTER_WIDTH} × {PRINTER_HEIGHT} inches (Letter)<br>'
+    f'- Color mode: CMYK or RGB<br>'
+    f'- Image resolution: minimum {MIN_DPI} DPI'
+    '</div>', unsafe_allow_html=True
+)
+
+# === File uploader (drag & drop) ===
 uploaded_files = st.file_uploader(
     "Upload PDF(s)", type=["pdf"], accept_multiple_files=True
 )
+
+def color_box(message, type="success"):
+    if type == "success":
+        st.markdown(f'<div class="success-box">{message}</div>', unsafe_allow_html=True)
+    elif type == "warning":
+        st.markdown(f'<div class="warning-box">{message}</div>', unsafe_allow_html=True)
+    elif type == "error":
+        st.markdown(f'<div class="error-box">{message}</div>', unsafe_allow_html=True)
 
 def analyze_pdf(pdf_file):
     st.markdown(f"---\n### 📄 File: {pdf_file.name}")
@@ -44,9 +110,9 @@ def analyze_pdf(pdf_file):
 
     # --- Page size validation ---
     if abs(width - PRINTER_WIDTH) < 0.01 and abs(height - PRINTER_HEIGHT) < 0.01:
-        st.success(f"✅ Page size matches {PRINTER_WIDTH}×{PRINTER_HEIGHT} inches (Letter).")
+        color_box(f"✅ Page size matches {PRINTER_WIDTH}×{PRINTER_HEIGHT} inches (Letter).", "success")
     else:
-        st.warning(f"⚠️ Page size does not match Letter size ({PRINTER_WIDTH}×{PRINTER_HEIGHT}).")
+        color_box(f"⚠️ Page size does not match Letter size ({PRINTER_WIDTH}×{PRINTER_HEIGHT}).", "warning")
 
     # --- Image DPI check ---
     doc = fitz.open(stream=pdf_data, filetype="pdf")
@@ -66,12 +132,11 @@ def analyze_pdf(pdf_file):
 
     st.subheader("🖼️ Image Resolution Check")
     if low_res_images:
-        st.warning("⚠️ Low-resolution images found:")
         for img_info in low_res_images:
-            st.write(f" - Page {img_info[0]}: {img_info[1]}×{img_info[2]} DPI")
+            color_box(f"⚠️ Page {img_info[0]}: {img_info[1]}×{img_info[2]} DPI", "warning")
     else:
         if all_dpi:
-            st.success(f"✅ All images meet the minimum {MIN_DPI} DPI requirement.")
+            color_box(f"✅ All images meet the minimum {MIN_DPI} DPI requirement.", "success")
         else:
             st.info("ℹ️ No images found in this PDF.")
 
@@ -96,18 +161,18 @@ def analyze_pdf(pdf_file):
             st.write("Detected color spaces:", ", ".join(color_spaces))
             invalid_colors = [c for c in color_spaces if c not in ACCEPTED_COLOR]
             if invalid_colors:
-                st.warning(f"⚠️ Unsupported color modes detected: {', '.join(invalid_colors)}")
+                for c in invalid_colors:
+                    color_box(f"⚠️ Unsupported color mode detected: {c}", "warning")
             else:
-                st.success("✅ All color modes are valid (CMYK or RGB).")
+                color_box("✅ All color modes are valid (CMYK or RGB).", "success")
         else:
             st.info("ℹ️ No color space info found (PDF may be text-only or grayscale).")
     except Exception as e:
-        st.error(f"Error checking color: {e}")
+        color_box(f"Error checking color: {e}", "error")
 
     # --- Overall validation summary ---
     st.subheader("📋 Overall Validation Summary")
     passed = True
-
     if not (abs(width - PRINTER_WIDTH) < 0.01 and abs(height - PRINTER_HEIGHT) < 0.01):
         passed = False
     if low_res_images:
@@ -117,9 +182,9 @@ def analyze_pdf(pdf_file):
             passed = False
 
     if passed:
-        st.success("✅ PDF meets all printer specifications.")
+        color_box("✅ PDF meets all printer specifications.", "success")
     else:
-        st.error("⚠️ PDF does NOT meet one or more printer specifications.")
+        color_box("⚠️ PDF does NOT meet one or more printer specifications.", "error")
 
 # Analyze all uploaded files
 if uploaded_files:
