@@ -10,7 +10,7 @@ PRINTER_WIDTH = 8.5       # inches
 PRINTER_HEIGHT = 11       # inches
 MIN_DPI = 300             # minimum image DPI
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB"]  # allowed color modes
-MARGIN = 0.5 * 72  # 0.5 inches in points
+MARGIN = 0.25 * 72  # 0.25 inches in points
 
 # === Branding Colors (UPS-style) ===
 PRIMARY_COLOR = "#FFB500"   # UPS Gold
