@@ -154,7 +154,7 @@ def analyze_pdf(file):
         if color_spaces:
             invalid = [c for c in color_spaces if c not in ACCEPTED_COLOR]
             if invalid:
-                color_box(f"⚠️ Unsupported color space(s): {', '.join(invalid)}", "warning")
+                color_box(f"⚠️ Unsupported color space(s): {', '.join(invalid)}. Accepted colors are CMYK & RGB.", "warning")
             else:
                 color_box("✅ All colors are CMYK or RGB.", "success")
         else:
