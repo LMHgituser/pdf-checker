@@ -208,9 +208,3 @@ if uploaded_files:
             analyze_pdf(f)
         else:
             analyze_image(f)
-
-# --- Optional Email Section ---
-st.markdown("---")
-email = st.text_input("📧 Enter your email to receive a results summary (optional)")
-if email:
-    st.info("Feature coming soon: results will be emailed automatically.")
