@@ -5,8 +5,29 @@ import io
 from PIL import Image
 import pikepdf
 
-# === Printer Specs ===
-PRINT_SIZES = [(4, 6), (5, 7), (8, 10)]  # inches
+# ===============================================================
+# SIZE MATCHING (YOUR NEW FUNCTION)
+# ===============================================================
+def size_matches(actual_w, actual_h, accepted_sizes, tolerance=0.05):
+    """Check if (w, h) matches any accepted size in any orientation."""
+    for (aw, ah) in accepted_sizes:
+        # Normal orientation
+        if abs(actual_w - aw) <= tolerance and abs(actual_h - ah) <= tolerance:
+            return True
+        # Rotated orientation
+        if abs(actual_w - ah) <= tolerance and abs(actual_h - aw) <= tolerance:
+            return True
+    return False
+
+
+A
+# Accepted print sizes (only listed once)
+ACCEPTED_SIZES = [
+    (4.00, 6.00),
+    (5.00, 7.00),
+    (8.00, 10.00),
+]
+
 MIN_DPI = 300
 SAFE_MARGIN = 0.125 * 72  # 1/8 inch in points
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB", "CMYK", "RGB"]
@@ -68,7 +89,7 @@ st.markdown(
     '<div class="instructions">'
     '📥 **Upload your PDF, PNG, or JPEG files.**<br>'
     'Print specifications:<br>'
-    '- Accepted sizes: 4×6, 5×7, or 8×10 inches<br>'
+    '- Accepted sizes: 4×6, 5×7, or 8×10 inches (any orientation)<br>'
     '- Safe margin: 1/8" from all edges<br>'
     '- Minimum 300 DPI<br>'
     '- Color mode: CMYK or RGB'
@@ -79,7 +100,6 @@ st.markdown(
 uploaded_files = st.file_uploader(
     "Upload file(s)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True
 )
-
 
 # =====================================================================
 # COLOR DETECTION HELPERS
@@ -188,7 +208,7 @@ def analyze_pdf(file):
     height_in = float(first_page.mediabox.height) / 72
     st.write(f"**Page size:** {width_in:.2f} × {height_in:.2f} inches")
 
-    if any(abs(width_in - w) < 0.05 and abs(height_in - h) < 0.05 for w, h in PRINT_SIZES):
+    if size_matches(width_in, height_in, ACCEPTED_SIZES):
         color_box("✅ Page size matches accepted print sizes.", "success")
     else:
         color_box("⚠️ Page size does not match 4×6, 5×7, or 8×10.", "warning")
@@ -253,7 +273,7 @@ def analyze_pdf(file):
             else:
                 color_box("✅ All colors are CMYK or RGB.", "success")
         else:
-            color_box("ℹ️ No detectable color information (probably grayscale).", "warning")
+            color_box("ℹ️ No detectable color information (likely grayscale).", "warning")
 
     except Exception as e:
         color_box(f"Error checking color: {e}", "error")
@@ -286,8 +306,8 @@ def analyze_image(file):
 
     color_box(f"Image size: {width_in:.2f} × {height_in:.2f} inches at {dpi[0]} DPI", "success")
 
-    # Size check
-    if any(abs(width_in - w) < 0.1 and abs(height_in - h) < 0.1 for w, h in PRINT_SIZES):
+    # Size check using your new function
+    if size_matches(width_in, height_in, ACCEPTED_SIZES):
         color_box("✅ Matches accepted print size.", "success")
     else:
         color_box("⚠️ Size not 4×6, 5×7, or 8×10.", "warning")
