@@ -19,9 +19,6 @@ def size_matches(actual_w, actual_h, accepted_sizes, tolerance=0.05):
             return True
     return False
 
-
-A
-# Accepted print sizes (only listed once)
 ACCEPTED_SIZES = [
     (4.00, 6.00),
     (5.00, 7.00),
