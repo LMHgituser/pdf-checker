@@ -26,7 +26,7 @@ ACCEPTED_SIZES = [
 ]
 
 MIN_DPI = 300
-SAFE_MARGIN = 0.0625 * 72  # 1/8 inch in points
+SAFE_MARGIN = 0.00001 * 72  # 1/8 inch in points
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB", "CMYK", "RGB"]
 
 # === Branding Colors (UPS-style) ===
