@@ -6,7 +6,7 @@ from PIL import Image
 import pikepdf
 
 # ===============================================================
-# SIZE MATCHING
+# SIZE MATCHING FUNCTION
 # ===============================================================
 def size_matches(actual_w, actual_h, accepted_sizes, tolerance=0.05):
     """Check if (w, h) matches any accepted size in any orientation."""
@@ -26,7 +26,7 @@ ACCEPTED_SIZES = [
 ]
 
 MIN_DPI = 300
-SAFE_MARGIN_INCH = 0.01  # 1/8 inch
+SAFE_MARGIN_INCH = 0.125  # 1/8 inch
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB", "CMYK", "RGB"]
 
 # === Branding Colors (UPS-style) ===
@@ -81,12 +81,13 @@ st.markdown(
 # === Logo ===
 st.image("UPS_Logo.png", width=150)
 st.markdown('<div class="header">UPS Store Print File Checker 🖨️</div>', unsafe_allow_html=True)
+
 st.markdown(
     '<div class="instructions">'
     '📥 **Upload your PDF, PNG, or JPEG files.**<br>'
     'Print specifications:<br>'
     '- Accepted sizes: 4×6, 5×7, or 8×10 inches (any orientation)<br>'
-    '- Safe margin: 1/8" from all edges<br>'
+    '- Safe margin: 1/8" from all edges (white is OK)<br>'
     '- Minimum 300 DPI<br>'
     '- Color mode: CMYK or RGB'
     '</div>',
@@ -148,59 +149,49 @@ def color_box(message, type="success"):
         st.markdown(f'<div class="error-box">{message}</div>', unsafe_allow_html=True)
 
 # =====================================================================
-# SAFE-ZONE CHECK FOR PDF IMAGES (WHITE OK)
+# MARGIN CHECK (RENDER-BASED)
 # =====================================================================
-def is_white(pixel, tolerance=5):
-    r, g, b = pixel[:3]
-    return (r >= 255 - tolerance and g >= 255 - tolerance and b >= 255 - tolerance)
-
-def check_margin(page, page_number):
+def check_margin(page, page_number, dpi=300):
+    """Check 1/8 inch margins — anything non-white is flagged."""
     issues = []
+    zoom = dpi / 72  # points to pixels
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    pixels = img.load()
 
-    # Check text blocks as before
-    for block in page.get_text("blocks"):
-        x0, y0, x1, y1, text = block[:5]
-        if (
-            x0 < SAFE_MARGIN_INCH * 72 or
-            y0 < SAFE_MARGIN_INCH * 72 or
-            x1 > page.rect.width - SAFE_MARGIN_INCH * 72 or
-            y1 > page.rect.height - SAFE_MARGIN_INCH * 72
-        ):
-            issues.append(f"Text too close to edge on page {page_number}: '{text[:30]}...'")
+    width, height = img.size
+    margin_px = int(SAFE_MARGIN_INCH * dpi)
 
-    # Check images in margin — allow white
-    for img in page.get_images(full=True):
-        xref = img[0]
-        base = page.parent.extract_image(xref)
-        pil_img = Image.open(io.BytesIO(base["image"]))
-        width, height = pil_img.size
-        margin_px_x = int(SAFE_MARGIN_INCH * 72 / 72 * width)  # convert to pixels
-        margin_px_y = int(SAFE_MARGIN_INCH * 72 / 72 * height)
+    def is_white(pixel, tol=5):
+        r, g, b = pixel[:3]
+        return r >= 255 - tol and g >= 255 - tol and b >= 255 - tol
 
-        pixels = pil_img.load()
+    # Top/Bottom
+    for y in range(margin_px):
+        for x in range(width):
+            if not is_white(pixels[x, y]):
+                issues.append(f"Non-white content in top margin on page {page_number}")
+                break
+        for x in range(width):
+            if not is_white(pixels[x, height - 1 - y]):
+                issues.append(f"Non-white content in bottom margin on page {page_number}")
+                break
+        if issues:
+            break
 
-        # Top/Bottom margins
-        for y in range(margin_px_y):
-            for x in range(width):
-                if not is_white(pixels[x, y]):
-                    issues.append(f"Non-white content in top margin on page {page_number}")
-                    break
-            for x in range(width):
-                if not is_white(pixels[x, height - 1 - y]):
-                    issues.append(f"Non-white content in bottom margin on page {page_number}")
-                    break
-            if issues: break
-        # Left/Right margins
-        for x in range(margin_px_x):
-            for y in range(height):
-                if not is_white(pixels[x, y]):
-                    issues.append(f"Non-white content in left margin on page {page_number}")
-                    break
-            for y in range(height):
-                if not is_white(pixels[width - 1 - x, y]):
-                    issues.append(f"Non-white content in right margin on page {page_number}")
-                    break
-            if issues: break
+    # Left/Right
+    for x in range(margin_px):
+        for y in range(height):
+            if not is_white(pixels[x, y]):
+                issues.append(f"Non-white content in left margin on page {page_number}")
+                break
+        for y in range(height):
+            if not is_white(pixels[width - 1 - x, y]):
+                issues.append(f"Non-white content in right margin on page {page_number}")
+                break
+        if issues:
+            break
 
     return issues
 
@@ -209,7 +200,6 @@ def check_margin(page, page_number):
 # =====================================================================
 def analyze_pdf(file):
     st.markdown(f"---\n### 📄 File: {file.name}")
-
     pdf_data = file.read()
     pdf_stream = io.BytesIO(pdf_data)
     reader = PdfReader(pdf_stream)
@@ -220,7 +210,6 @@ def analyze_pdf(file):
     width_in = float(first_page.mediabox.width) / 72
     height_in = float(first_page.mediabox.height) / 72
     st.write(f"**Page size:** {width_in:.2f} × {height_in:.2f} inches")
-
     if size_matches(width_in, height_in, ACCEPTED_SIZES):
         color_box("✅ Page size matches accepted print sizes.", "success")
     else:
@@ -238,16 +227,17 @@ def analyze_pdf(file):
             if dpi[0] < MIN_DPI or dpi[1] < MIN_DPI:
                 low_res.append((i + 1, dpi))
     if low_res:
-        for page_num, dpi in low_res:
-            color_box(f"⚠️ Page {page_num}: {dpi[0]}×{dpi[1]} DPI (below 300)", "warning")
+        for page, dpi in low_res:
+            color_box(f"⚠️ Page {page}: {dpi[0]}×{dpi[1]} DPI (below 300)", "warning")
     else:
         color_box("✅ All images meet the 300 DPI minimum.", "success")
 
-    # --- Color check ---
+    # --- Color Mode ---
     st.subheader("🎨 Color Mode Check")
     try:
         pdf = pikepdf.open(io.BytesIO(pdf_data))
         color_spaces = set()
+
         for page in pdf.pages:
             res = page.get("/Resources", {})
             xobjs = res.get("/XObject", {})
@@ -255,12 +245,15 @@ def analyze_pdf(file):
                 cs = xobjs[obj].get("/ColorSpace")
                 if cs and isinstance(cs, pikepdf.Name):
                     color_spaces.add(str(cs))
+
         default_cs = detect_default_color_space(pdf)
         if default_cs:
             color_spaces.add(default_cs)
+
         stream_cs = detect_color_from_streams(doc)
         if stream_cs:
             color_spaces.add(stream_cs)
+
         img_modes = detect_color_from_images(doc)
         if img_modes:
             color_spaces.update(img_modes)
@@ -276,7 +269,7 @@ def analyze_pdf(file):
     except Exception as e:
         color_box(f"Error checking color: {e}", "error")
 
-    # --- Safe zone check ---
+    # --- Safe Zone Check ---
     st.subheader("📐 Safe Zone Check (1/8\")")
     issues = []
     for i, page in enumerate(doc, start=1):
@@ -287,18 +280,17 @@ def analyze_pdf(file):
     else:
         color_box("✅ No non-white content within 1/8\" of page edge.", "success")
 
+
 # =====================================================================
 # IMAGE ANALYSIS
 # =====================================================================
 def analyze_image(file):
     st.markdown(f"---\n### 🖼️ File: {file.name}")
-
     img = Image.open(file)
     dpi = img.info.get("dpi", (72, 72))
     width_px, height_px = img.size
     width_in = width_px / dpi[0]
     height_in = height_px / dpi[1]
-
     color_box(f"Image size: {width_in:.2f} × {height_in:.2f} inches at {dpi[0]} DPI", "success")
 
     if size_matches(width_in, height_in, ACCEPTED_SIZES):
@@ -306,7 +298,7 @@ def analyze_image(file):
     else:
         color_box("⚠️ Size not 4×6, 5×7, or 8×10.", "warning")
 
-    if dpi[0] < MIN_DPI:
+    if dpi[0] < MIN_DPI or dpi[1] < MIN_DPI:
         color_box("⚠️ Low image resolution (<300 DPI).", "warning")
     else:
         color_box("✅ DPI meets minimum requirement.", "success")
@@ -315,6 +307,7 @@ def analyze_image(file):
         color_box(f"✅ Color mode: {img.mode}", "success")
     else:
         color_box(f"⚠️ Unusual color mode: {img.mode}", "warning")
+
 
 # =====================================================================
 # PROCESS FILES
