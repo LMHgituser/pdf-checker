@@ -3,7 +3,6 @@ from PyPDF2 import PdfReader
 import fitz  # PyMuPDF
 import io
 from PIL import Image
-import pikepdf
 
 # ===============================================================
 # SIZE MATCHING
@@ -27,7 +26,6 @@ ACCEPTED_SIZES = [
 
 MIN_DPI = 300
 SAFE_MARGIN_INCH = 0.125  # 1/8 inch
-ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB", "CMYK", "RGB"]
 
 # === Branding Colors (UPS-style) ===
 PRIMARY_COLOR = "#FFB500"
@@ -89,7 +87,6 @@ st.markdown(
     '- Accepted sizes: 4×6, 5×7, or 8×10 inches (any orientation)<br>'
     '- Safe margin: 1/8" from all edges<br>'
     '- Minimum 300 DPI<br>'
-    '- Color mode: CMYK or RGB'
     '</div>',
     unsafe_allow_html=True
 )
@@ -99,49 +96,8 @@ uploaded_files = st.file_uploader(
 )
 
 # =====================================================================
-# COLOR DETECTION HELPERS
-# =====================================================================
-
-def detect_default_color_space(pdf):
-    try:
-        root = pdf.root
-        if "/DefaultRGB" in root:
-            return "RGB"
-        if "/DefaultCMYK" in root:
-            return "CMYK"
-    except:
-        pass
-    return None
-
-def detect_color_from_streams(doc):
-    try:
-        for page in doc:
-            text = page.get_text("text")
-            if " rg" in text or " RG" in text:
-                return "RGB"
-            if " k" in text or " K" in text:
-                return "CMYK"
-    except:
-        pass
-    return None
-
-def detect_color_from_images(doc):
-    modes = set()
-    try:
-        for page in doc:
-            for img in page.get_images(full=True):
-                xref = img[0]
-                base = doc.extract_image(xref)
-                pil_img = Image.open(io.BytesIO(base["image"]))
-                modes.add(pil_img.mode)
-    except:
-        pass
-    return modes
-
-# =====================================================================
 # DISPLAY COLOR BOXES
 # =====================================================================
-
 def color_box(message, type="success"):
     if type == "success":
         st.markdown(f'<div class="success-box">{message}</div>', unsafe_allow_html=True)
@@ -151,9 +107,8 @@ def color_box(message, type="success"):
         st.markdown(f'<div class="error-box">{message}</div>', unsafe_allow_html=True)
 
 # =====================================================================
-# SAFE ZONE CHECK (TEXT AND IMAGES)
+# SAFE ZONE CHECK (TEXT AND IMAGES ONLY)
 # =====================================================================
-
 def check_margin_text_and_images(page):
     """Check if any text or image crosses 1/8 inch margin from page edge."""
     issues = []
@@ -181,11 +136,9 @@ def check_margin_text_and_images(page):
 
     return issues
 
-
 # =====================================================================
 # PDF ANALYSIS
 # =====================================================================
-
 def analyze_pdf(file):
     st.markdown(f"---\n### 📄 File: {file.name}")
 
@@ -205,7 +158,7 @@ def analyze_pdf(file):
     else:
         color_box("⚠️ Page size does not match 4×6, 5×7, or 8×10.", "warning")
 
-    # Image DPI
+    # Image DPI check
     st.subheader("🖼️ Image Resolution Check")
     low_res = []
     for i, page in enumerate(doc):
@@ -223,58 +176,21 @@ def analyze_pdf(file):
     else:
         color_box("✅ All images meet the 300 DPI minimum.", "success")
 
-    # Color mode check
-    st.subheader("🎨 Color Mode Check")
-    try:
-        pdf = pikepdf.open(io.BytesIO(pdf_data))
-        color_spaces = set()
-
-        for page in pdf.pages:
-            res = page.get("/Resources", {})
-            xobjs = res.get("/XObject", {})
-            for obj in xobjs:
-                cs = xobjs[obj].get("/ColorSpace")
-                if cs and isinstance(cs, pikepdf.Name):
-                    color_spaces.add(str(cs))
-
-        default_cs = detect_default_color_space(pdf)
-        if default_cs:
-            color_spaces.add(default_cs)
-
-        stream_cs = detect_color_from_streams(doc)
-        if stream_cs:
-            color_spaces.add(stream_cs)
-
-        img_modes = detect_color_from_images(doc)
-        if img_modes:
-            color_spaces.update(img_modes)
-
-        # Strip leading '/' for validation
-        invalid = [c for c in color_spaces if c.lstrip("/") not in ACCEPTED_COLOR]
-        if invalid:
-            color_box(f"⚠️ Unsupported color space(s): {', '.join(invalid)}", "warning")
-        else:
-            color_box("✅ All colors are CMYK or RGB.", "success")
-    except Exception as e:
-        color_box(f"Error checking color: {e}", "error")
-
     # Safe zone check (text + images only)
-st.subheader("📐 Safe Zone Check (1/8\")")
-issues = []
-for i, page in enumerate(doc, start=1):
-    issues.extend(check_margin_text_and_images(page))
+    st.subheader("📐 Safe Zone Check (1/8\")")
+    issues = []
+    for i, page in enumerate(doc, start=1):
+        issues.extend(check_margin_text_and_images(page))
 
-if issues:
-    for issue in issues:
-        color_box(f"⚠️ {issue}", "warning")
-else:
-    color_box("✅ No text or images within 1/8\" of page edge.", "success")
-
+    if issues:
+        for issue in issues:
+            color_box(f"⚠️ {issue}", "warning")
+    else:
+        color_box("✅ No text or images within 1/8\" of page edge.", "success")
 
 # =====================================================================
 # IMAGE ANALYSIS
 # =====================================================================
-
 def analyze_image(file):
     st.markdown(f"---\n### 🖼️ File: {file.name}")
 
@@ -296,15 +212,9 @@ def analyze_image(file):
     else:
         color_box("✅ DPI meets minimum requirement.", "success")
 
-    if img.mode in ["RGB", "CMYK"]:
-        color_box(f"✅ Color mode: {img.mode}", "success")
-    else:
-        color_box(f"⚠️ Unusual color mode: {img.mode}", "warning")
-
 # =====================================================================
 # PROCESS FILES
 # =====================================================================
-
 if uploaded_files:
     for f in uploaded_files:
         if f.name.lower().endswith(".pdf"):
