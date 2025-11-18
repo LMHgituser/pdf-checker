@@ -151,11 +151,11 @@ def color_box(message, type="success"):
         st.markdown(f'<div class="error-box">{message}</div>', unsafe_allow_html=True)
 
 # =====================================================================
-# SAFE ZONE CHECK (TEXT ONLY)
+# SAFE ZONE CHECK (TEXT AND IMAGES)
 # =====================================================================
 
-def check_margin_text_only(page):
-    """Check if any text crosses 1/8 inch margin from page edge."""
+def check_margin_text_and_images(page):
+    """Check if any text or image crosses 1/8 inch margin from page edge."""
     issues = []
     margin_pts = SAFE_MARGIN_INCH * 72
     safe_rect = fitz.Rect(
@@ -165,14 +165,22 @@ def check_margin_text_only(page):
         page.rect.height - margin_pts,
     )
 
-    # Text blocks only
+    # Text blocks
     for block in page.get_text("blocks"):
         x0, y0, x1, y1, text = block[:5]
         block_rect = fitz.Rect(x0, y0, x1, y1)
         if not safe_rect.contains(block_rect):
             issues.append(f"Text too close to edge: '{text[:30]}...'")
 
+    # Images
+    for img in page.get_images(full=True):
+        xref = img[0]
+        for rect in page.get_image_rects(xref):
+            if not safe_rect.contains(rect):
+                issues.append("Image too close to edge")
+
     return issues
+
 
 # =====================================================================
 # PDF ANALYSIS
@@ -250,17 +258,18 @@ def analyze_pdf(file):
     except Exception as e:
         color_box(f"Error checking color: {e}", "error")
 
-    # Safe zone check (text only)
-    st.subheader("📐 Safe Zone Check (1/8\")")
-    issues = []
-    for i, page in enumerate(doc, start=1):
-        issues.extend(check_margin_text_only(page))
+    # Safe zone check (text + images only)
+st.subheader("📐 Safe Zone Check (1/8\")")
+issues = []
+for i, page in enumerate(doc, start=1):
+    issues.extend(check_margin_text_and_images(page))
 
-    if issues:
-        for issue in issues:
-            color_box(f"⚠️ {issue}", "warning")
-    else:
-        color_box("✅ No text within 1/8\" of page edge.", "success")
+if issues:
+    for issue in issues:
+        color_box(f"⚠️ {issue}", "warning")
+else:
+    color_box("✅ No text or images within 1/8\" of page edge.", "success")
+
 
 # =====================================================================
 # IMAGE ANALYSIS
