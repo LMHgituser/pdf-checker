@@ -26,7 +26,7 @@ ACCEPTED_SIZES = [
 ]
 
 MIN_DPI = 300
-SAFE_MARGIN_INCH = 0.05 # 1/8 inch
+SAFE_MARGIN_INCH = 0.125  # 1/8 inch
 ACCEPTED_COLOR = ["DeviceCMYK", "DeviceRGB", "CMYK", "RGB"]
 
 # === Branding Colors (UPS-style) ===
@@ -87,7 +87,7 @@ st.markdown(
     '📥 **Upload your PDF, PNG, or JPEG files.**<br>'
     'Print specifications:<br>'
     '- Accepted sizes: 4×6, 5×7, or 8×10 inches (any orientation)<br>'
-    '- Safe margin: 1/8" from all edges (content only)<br>'
+    '- Safe margin: 1/8" from all edges<br>'
     '- Minimum 300 DPI<br>'
     '- Color mode: CMYK or RGB'
     '</div>',
@@ -113,6 +113,7 @@ def detect_default_color_space(pdf):
         pass
     return None
 
+
 def detect_color_from_streams(doc):
     try:
         for page in doc:
@@ -124,6 +125,7 @@ def detect_color_from_streams(doc):
     except:
         pass
     return None
+
 
 def detect_color_from_images(doc):
     modes = set()
@@ -138,6 +140,7 @@ def detect_color_from_images(doc):
         pass
     return modes
 
+
 # =====================================================================
 # DISPLAY COLOR BOXES
 # =====================================================================
@@ -150,54 +153,38 @@ def color_box(message, type="success"):
     elif type == "error":
         st.markdown(f'<div class="error-box">{message}</div>', unsafe_allow_html=True)
 
+
 # =====================================================================
-# CONTENT-AWARE SAFE ZONE CHECK
+# GEOMETRIC SAFE ZONE CHECK (IGNORES BACKGROUND COLORS)
 # =====================================================================
 
-def check_margin_content_aware(page, page_number, dpi=150):
+def check_margin_content_only(page):
+    """Check if any text or image crosses 1/8 inch margin from page edge."""
     issues = []
-    zoom = dpi / 72
-    mat = fitz.Matrix(zoom, zoom)
-    pix = page.get_pixmap(matrix=mat, alpha=False)
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    pixels = img.load()
+    margin_pts = SAFE_MARGIN_INCH * 72
+    safe_rect = fitz.Rect(
+        margin_pts,
+        margin_pts,
+        page.rect.width - margin_pts,
+        page.rect.height - margin_pts,
+    )
 
-    width, height = img.size
-    margin_px = int(SAFE_MARGIN_INCH * dpi)
+    # Text blocks
+    for block in page.get_text("blocks"):
+        x0, y0, x1, y1, text = block[:5]
+        block_rect = fitz.Rect(x0, y0, x1, y1)
+        if not safe_rect.contains(block_rect):
+            issues.append(f"Text too close to edge: '{text[:30]}...'")
 
-    # Determine background color (sample center)
-    sample_color = pixels[width // 2, height // 2]
-
-    def is_background(pixel, tol=5):
-        return all(abs(pixel[i] - sample_color[i]) <= tol for i in range(3))
-
-    # Check top/bottom margins
-    for y in range(margin_px):
-        for x in range(width):
-            if not is_background(pixels[x, y]):
-                issues.append(f"Content in top margin on page {page_number}")
-                break
-        for x in range(width):
-            if not is_background(pixels[x, height - 1 - y]):
-                issues.append(f"Content in bottom margin on page {page_number}")
-                break
-        if issues:
-            break
-
-    # Check left/right margins
-    for x in range(margin_px):
-        for y in range(height):
-            if not is_background(pixels[x, y]):
-                issues.append(f"Content in left margin on page {page_number}")
-                break
-        for y in range(height):
-            if not is_background(pixels[width - 1 - x, y]):
-                issues.append(f"Content in right margin on page {page_number}")
-                break
-        if issues:
-            break
+    # Images
+    for img in page.get_images(full=True):
+        xref = img[0]
+        for rect in page.get_image_rects(xref):
+            if not safe_rect.contains(rect):
+                issues.append("Image too close to edge")
 
     return issues
+
 
 # =====================================================================
 # PDF ANALYSIS
@@ -211,7 +198,7 @@ def analyze_pdf(file):
     reader = PdfReader(pdf_stream)
     doc = fitz.open(stream=pdf_data, filetype="pdf")
 
-    # --- Page size ---
+    # Page size
     first_page = reader.pages[0]
     width_in = float(first_page.mediabox.width) / 72
     height_in = float(first_page.mediabox.height) / 72
@@ -222,7 +209,7 @@ def analyze_pdf(file):
     else:
         color_box("⚠️ Page size does not match 4×6, 5×7, or 8×10.", "warning")
 
-    # --- Image DPI ---
+    # Image DPI
     st.subheader("🖼️ Image Resolution Check")
     low_res = []
     for i, page in enumerate(doc):
@@ -235,16 +222,17 @@ def analyze_pdf(file):
                 low_res.append((i + 1, dpi))
 
     if low_res:
-        for page, dpi in low_res:
-            color_box(f"⚠️ Page {page}: {dpi[0]}×{dpi[1]} DPI (below 300)", "warning")
+        for page_num, dpi in low_res:
+            color_box(f"⚠️ Page {page_num}: {dpi[0]}×{dpi[1]} DPI (below 300)", "warning")
     else:
         color_box("✅ All images meet the 300 DPI minimum.", "success")
 
-    # --- Color check ---
+    # Color mode check
     st.subheader("🎨 Color Mode Check")
     try:
         pdf = pikepdf.open(io.BytesIO(pdf_data))
         color_spaces = set()
+
         for page in pdf.pages:
             res = page.get("/Resources", {})
             xobjs = res.get("/XObject", {})
@@ -252,12 +240,15 @@ def analyze_pdf(file):
                 cs = xobjs[obj].get("/ColorSpace")
                 if cs and isinstance(cs, pikepdf.Name):
                     color_spaces.add(str(cs))
+
         default_cs = detect_default_color_space(pdf)
         if default_cs:
             color_spaces.add(default_cs)
+
         stream_cs = detect_color_from_streams(doc)
         if stream_cs:
             color_spaces.add(stream_cs)
+
         img_modes = detect_color_from_images(doc)
         if img_modes:
             color_spaces.update(img_modes)
@@ -273,17 +264,18 @@ def analyze_pdf(file):
     except Exception as e:
         color_box(f"Error checking color: {e}", "error")
 
-    # --- Safe zone check ---
-    st.subheader("📐 Safe Zone Check (content-aware)")
+    # Safe zone check (content only)
+    st.subheader("📐 Safe Zone Check (1/8\")")
     issues = []
     for i, page in enumerate(doc, start=1):
-        issues.extend(check_margin_content_aware(page, i))
+        issues.extend(check_margin_content_only(page))
 
     if issues:
         for issue in issues:
             color_box(f"⚠️ {issue}", "warning")
     else:
-        color_box("✅ No content crosses the safe zone.", "success")
+        color_box("✅ No text or images within 1/8\" of page edge.", "success")
+
 
 # =====================================================================
 # IMAGE ANALYSIS
@@ -305,7 +297,7 @@ def analyze_image(file):
     else:
         color_box("⚠️ Size not 4×6, 5×7, or 8×10.", "warning")
 
-    if dpi[0] < MIN_DPI:
+    if dpi[0] < MIN_DPI or dpi[1] < MIN_DPI:
         color_box("⚠️ Low image resolution (<300 DPI).", "warning")
     else:
         color_box("✅ DPI meets minimum requirement.", "success")
@@ -314,6 +306,7 @@ def analyze_image(file):
         color_box(f"✅ Color mode: {img.mode}", "success")
     else:
         color_box(f"⚠️ Unusual color mode: {img.mode}", "warning")
+
 
 # =====================================================================
 # PROCESS FILES
