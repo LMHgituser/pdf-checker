@@ -154,7 +154,7 @@ def color_box(message, type="success"):
 # SAFE ZONE CHECK (TEXT ONLY)
 # =====================================================================
 
-def check_margin_content_only(page):
+def check_margin_text_only(page):
     """Check if any text crosses 1/8 inch margin from page edge."""
     issues = []
     margin_pts = SAFE_MARGIN_INCH * 72
@@ -165,7 +165,7 @@ def check_margin_content_only(page):
         page.rect.height - margin_pts,
     )
 
-    # Only check text blocks
+    # Text blocks only
     for block in page.get_text("blocks"):
         x0, y0, x1, y1, text = block[:5]
         block_rect = fitz.Rect(x0, y0, x1, y1)
@@ -241,14 +241,12 @@ def analyze_pdf(file):
         if img_modes:
             color_spaces.update(img_modes)
 
-        if color_spaces:
-            invalid = [c for c in color_spaces if c not in ACCEPTED_COLOR]
-            if invalid:
-                color_box(f"⚠️ Unsupported color space(s): {', '.join(invalid)}", "warning")
-            else:
-                color_box("✅ All colors are CMYK or RGB.", "success")
+        # Strip leading '/' for validation
+        invalid = [c for c in color_spaces if c.lstrip("/") not in ACCEPTED_COLOR]
+        if invalid:
+            color_box(f"⚠️ Unsupported color space(s): {', '.join(invalid)}", "warning")
         else:
-            color_box("ℹ️ No detectable color information (likely grayscale).", "warning")
+            color_box("✅ All colors are CMYK or RGB.", "success")
     except Exception as e:
         color_box(f"Error checking color: {e}", "error")
 
@@ -256,7 +254,7 @@ def analyze_pdf(file):
     st.subheader("📐 Safe Zone Check (1/8\")")
     issues = []
     for i, page in enumerate(doc, start=1):
-        issues.extend(check_margin_content_only(page))
+        issues.extend(check_margin_text_only(page))
 
     if issues:
         for issue in issues:
